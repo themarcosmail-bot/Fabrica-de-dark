@@ -32,3 +32,15 @@ jobs:
           python -m piper.download_voices --data-dir models pt_BR-faber-medium
       - name: Renderizar e refazer apenas a cena ou fala alterada
         run: python tests/verificar_episodio.py
+
+  descobrir-skills:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Instalar Codex CLI
+        run: npm install --global @openai/codex@0.167.1
+      - name: Conferir as sete skills descobertas
+        run: python3 tests/verificar_descoberta_skills.py
