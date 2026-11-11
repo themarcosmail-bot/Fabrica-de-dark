@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Revisão · Fábrica de Dark</title>
+  <link rel="stylesheet" href="/painel.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span>Fábrica de Dark</span>
+      </div>
+      <span class="local"><i aria-hidden="true"></i> Painel local</span>
+    </div>
+  </header>
+  <main class="workspace">
+    <section class="episode" aria-labelledby="episode-title">
+      <div class="episode-heading">
+        <p class="eyebrow">$serie</p>
+        <h1 id="episode-title">$titulo</h1>
+      </div>
+      <form class="version-picker" action="/" method="get">
+        <label for="versao">Versão do episódio</label>
+        <div class="picker-row">
+          <select id="versao" name="versao">$opcoes</select>
+          <button class="button secondary" type="submit">Abrir</button>
+        </div>
+      </form>
+    </section>
+
+    <div class="review-grid">
+      <section class="card preview" aria-labelledby="preview-title">
+        <header class="card-header">
+          <h2 id="preview-title">Prévia do vídeo</h2>
+          <span class="format">$formato</span>
+        </header>
+        <div class="stage">
+          <video controls playsinline preload="metadata" src="$video" aria-label="Prévia de $titulo">
+            <a href="$video">Abrir vídeo</a>
+          </video>
+        </div>
+        <footer class="preview-footer">
+          <a class="file-link" href="$legendas" download><span aria-hidden="true">↓</span> Legendas SRT</a>
+          <a class="file-link" href="$roteiro" download><span aria-hidden="true">↓</span> Roteiro JSON</a>
+        </footer>
+      </section>
+
+      <aside class="sidebar" aria-label="Decisão e fontes">
+        <section class="card decision" aria-labelledby="decision-title">
+          <header class="card-header"><h2 id="decision-title">Decisão de revisão</h2></header>
+          <div class="card-body">
+            <div class="status $estado">
+              <span class="status-dot" aria-hidden="true"></span>
+              <div><strong>$estado_rotulo</strong><p>$estado_detalhe</p></div>
+            </div>
+            <form action="/revisao" method="post">
+              <input type="hidden" name="versao" value="$versao">
+              <input type="hidden" name="token" value="$token">
+              <label for="notas">Notas da revisão</label>
+              <textarea id="notas" name="notas" rows="4" maxlength="$limite" placeholder="Ex.: ajuste a pronúncia na segunda cena.">$notas</textarea>
+              $aviso
+              <div class="actions">
+                <button type="submit" class="button secondary" name="decisao" value="ajustes-solicitados">Pedir ajustes</button>
+                <button type="submit" class="button primary" name="decisao" value="aprovado">Aprovar versão</button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <section class="card sources" aria-labelledby="sources-title">
+          <header class="card-header"><h2 id="sources-title">Fontes do roteiro</h2></header>
+          <ul class="source-list">$fontes</ul>
+        </section>
+      </aside>
+    </div>
+  </main>
+</body>
+</html>

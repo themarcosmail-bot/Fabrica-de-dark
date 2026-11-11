@@ -64,4 +64,14 @@ Sem `--episodio`, cada execução concluída cria uma pasta em `saida/` com:
 - `legendas.srt` com uma entrada por fala no modo documental ou por cena nos cartões.
 - `roteiro.json` com os textos usados e as fontes fornecidas.
 
-O painel de revisão, a fila de produção e a integração com o YouTube ficam para versões futuras.
+## Revisar no painel local
+
+Após gerar um episódio com `--episodio`, inicie o painel apontando para a mesma pasta:
+
+```powershell
+.\.venv\Scripts\python.exe revisar.py --episodio episodios/mazda
+```
+
+Abra `http://127.0.0.1:8765/` no navegador deste computador. Escolha a versão, assista ao vídeo, confira as fontes e baixe o roteiro ou as legendas. Use **Pedir ajustes** para salvar as notas ou **Aprovar versão** para registrar a aprovação local.
+
+A decisão fica em `versoes/<versao>/revisao.json`. Cada versão tem seu próprio registro. Uma nova renderização começa aguardando revisão. A fila de produção e a integração com o YouTube ficam para versões futuras.
