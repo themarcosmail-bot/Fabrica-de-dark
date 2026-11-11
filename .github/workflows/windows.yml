@@ -1,0 +1,75 @@
+name: Short no Windows
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  primeiro-short:
+    runs-on: windows-2025
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Instalar FFmpeg
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          choco install ffmpeg --version=9.0.2 --yes --no-progress --limit-output
+          ffmpeg -version
+          ffprobe -version
+
+      - name: Instalar dependências e baixar a voz
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          python -m venv .venv
+          .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+          Copy-Item config.example.json config.json
+          New-Item -ItemType Directory -Force models | Out-Null
+          .\.venv\Scripts\python.exe -m piper.download_voices --data-dir models pt_BR-faber-medium
+
+      - name: Gerar o Short do README
+        run: .\.venv\Scripts\python.exe main.py --roteiro exemplos/primeiro-short.json
+
+      - name: Validar vídeo, legendas e roteiro
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $pastas = @(Get-ChildItem saida -Directory)
+          if ($pastas.Count -ne 1) { throw "Esperava uma única pasta de saída." }
+
+          $video = Join-Path $pastas[0].FullName 'video_final.mp4'
+          $legendas = Join-Path $pastas[0].FullName 'legendas.srt'
+          $roteiro = Join-Path $pastas[0].FullName 'roteiro.json'
+
+          $info = ffprobe -v error -show_streams -of json $video | Out-String | ConvertFrom-Json
+          $imagem = $info.streams | Where-Object codec_type -eq 'video'
+          $audio = $info.streams | Where-Object codec_type -eq 'audio'
+          if ($imagem.codec_name -ne 'h264' -or $imagem.width -ne 1080 -or $imagem.height -ne 1920) {
+            throw "Esperava um vídeo H.264 de 1080 × 1920."
+          }
+          if ($audio.codec_name -ne 'aac') { throw "Esperava uma faixa de áudio AAC." }
+          ffmpeg -v error -xerror -i $video -f null -
+
+          $entradas = @(Select-String -Path $legendas -SimpleMatch ' --> ')
+          if ($entradas.Count -ne 4) { throw "Esperava quatro entradas de legenda." }
+
+          $exportado = Get-Content $roteiro -Raw | ConvertFrom-Json
+          $exemplo = Get-Content exemplos/primeiro-short.json -Raw | ConvertFrom-Json
+          if ($exportado.cenas.Count -ne 4 -or ($exportado.fontes -join ',') -ne ($exemplo.fontes -join ',')) {
+            throw "O roteiro exportado deve preservar as quatro cenas e as fontes."
+          }
+          Write-Output "Short de exemplo validado em Windows Server 2025."
