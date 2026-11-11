@@ -58,7 +58,7 @@ jobs:
           export ROUTE_TRACE="$RUNNER_TEMP/codex.jsonl"
           set +e
           timeout 12m codex exec -m "$ROUTE_MODEL" \
-            --ephemeral --json --sandbox workspace-write -c model_context_window=16384 \
+            --ephemeral --json --sandbox workspace-write --disable multi_agent -c model_context_window=16384 \
             -c 'model_provider="ollama-teste"' \
             -c 'model_providers.ollama-teste.name="Ollama local"' \
             -c 'model_providers.ollama-teste.base_url="http://127.0.0.1:11434/v1/"' \
