@@ -15,9 +15,13 @@
     },
     {
       "visual": {
-        "tipo": "origem",
+        "tipo": "linha-tempo",
         "titulo": "IDEIA ALEMÃ.\nAPOSTA JAPONESA.",
-        "chamada": "1961  /  A ORIGEM"
+        "chamada": "1961  /  A ORIGEM",
+        "itens": [
+          {"marco": "1961", "titulo": "ACORDO TÉCNICO", "detalhe": "Mazda  /  NSU  /  Wankel"},
+          {"marco": "WANKEL", "titulo": "CONCEITO DO ROTATIVO", "detalhe": "Desenvolvido por Felix Wankel"}
+        ]
       },
       "falas": [
         "Em 1961, a Mazda fez um acordo técnico com a alemã NSU.",
@@ -38,9 +42,12 @@
     },
     {
       "visual": {
-        "tipo": "cosmo",
+        "tipo": "contagem-rotores",
         "titulo": "COSMO\nSPORT",
-        "chamada": "1967  /  DA BANCADA PARA A RUA"
+        "chamada": "1967  /  DA BANCADA PARA A RUA",
+        "quantidade": 2,
+        "rotulo": "2 ROTORES  /  COSMO SPORT",
+        "ilustracao": "cosmo-sport"
       },
       "falas": [
         "A Mazda resolveu o problema com vedações de carbono e alumínio.",
@@ -49,9 +56,11 @@
     },
     {
       "visual": {
-        "tipo": "lemans",
+        "tipo": "contagem-rotores",
         "titulo": "VITÓRIA\nEM LE MANS",
-        "chamada": "1991  /  MAZDA 787B"
+        "chamada": "1991  /  MAZDA 787B",
+        "quantidade": 4,
+        "rotulo": "4 ROTORES  /  MOTOR R26B"
       },
       "falas": [
         "Em 1991, o Mazda 787B venceu as 24 Horas de Le Mans.",

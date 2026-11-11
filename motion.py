@@ -13,7 +13,33 @@ MUTED = "#A9B4B4"
 GRID = "#232C30"
 ORANGE = "#FF9862"
 MINT = "#74E3CC"
-STYLES = {"impacto", "origem", "mecanica", "cosmo", "lemans"}
+STYLES = {"impacto", "origem", "mecanica", "cosmo", "lemans", "linha-tempo", "contagem-rotores"}
+MAZDA_TIMELINE = [
+    {"marco": "1961", "titulo": "ACORDO TÉCNICO", "detalhe": "Mazda  /  NSU  /  Wankel"},
+    {"marco": "WANKEL", "titulo": "CONCEITO DO ROTATIVO", "detalhe": "Desenvolvido por Felix Wankel"},
+]
+
+
+def validate_visual(visual, index):
+    def line(value, limit):
+        return isinstance(value, str) and bool(value.strip()) and len(value) <= limit and len(value.splitlines()) == 1
+
+    style = visual["tipo"]
+    if style == "linha-tempo":
+        entries = visual.get("itens")
+        if not isinstance(entries, list) or not 1 <= len(entries) <= 2 or any(
+            not isinstance(item, dict) or not all(
+                line(item.get(key), limit) for key, limit in (("marco", 10), ("titulo", 28), ("detalhe", 35))
+            ) for item in entries
+        ):
+            raise ValueError(f"Informe de 1 a 2 itens com marco, titulo e detalhe na cena {index}.")
+    if style == "contagem-rotores":
+        count = visual.get("quantidade")
+        illustration = visual.get("ilustracao")
+        if type(count) is not int or not 1 <= count <= 4 or not line(visual.get("rotulo"), 42):
+            raise ValueError(f"Informe de 1 a 4 rotores e um rótulo na cena {index}.")
+        if illustration is not None and (illustration != "cosmo-sport" or count != 2):
+            raise ValueError(f"A ilustração cosmo-sport requer dois rotores na cena {index}.")
 
 
 def ease(value):
@@ -108,22 +134,19 @@ def wrap_caption(draw, text, face):
     return "\n".join(lines)
 
 
-def draw_origin(draw, t, accent, font):
+def draw_origin(draw, t, accent, font, entries):
     x = 84
     draw.line((x, 470, x, 754), fill="#466064", width=3)
-    for index, (year, title, note) in enumerate((
-        ("1961", "ACORDO TÉCNICO", "Mazda  /  NSU  /  Wankel"),
-        ("WANKEL", "CONCEITO DO ROTATIVO", "Desenvolvido por Felix Wankel"),
-    )):
+    for index, item in enumerate(entries):
         progress = ease((t - index * .65) * 3.5)
         if progress <= 0:
             continue
         y = 468 + index * 213
         slide = int((1 - progress) * 34)
         draw.ellipse((x - 7, y + 7, x + 7, y + 21), fill=accent)
-        draw.text((116 + slide, y - 38), year, font=font(88, True), fill=accent)
-        draw.text((122 + slide, y + 56), title, font=font(26, True), fill=INK)
-        draw.text((122 + slide, y + 96), note, font=font(25), fill=MUTED)
+        draw.text((116 + slide, y - 38), item["marco"], font=fitted_title(draw, item["marco"], font), fill=accent)
+        draw.text((122 + slide, y + 56), item["titulo"], font=font(26, True), fill=INK)
+        draw.text((122 + slide, y + 96), item["detalhe"], font=font(25), fill=MUTED)
 
 
 def draw_cosmo(draw, t, accent):
@@ -144,7 +167,8 @@ def draw_cosmo(draw, t, accent):
             draw.line(((x, 518), point(x, 518, 17, theta)), fill="#678687", width=2)
 
 
-def draw_mechanism(draw, style, t, accent, font):
+def draw_mechanism(draw, visual, t, accent, font):
+    style = visual["tipo"]
     angle = .3 + t * .94
     if style in {"impacto", "mecanica"}:
         rotor(draw, 353, 612, 224, angle, accent, emphasis=style == "mecanica")
@@ -152,11 +176,25 @@ def draw_mechanism(draw, style, t, accent, font):
         draw.text((351, 845), callout, font=font(23, True), fill=accent, anchor="ma")
         return
 
-    count = 2 if style == "cosmo" else 4
-    if count == 2:
+    if style == "cosmo":
+        count, label, illustration = 2, "2 ROTORES  /  COSMO SPORT", "cosmo-sport"
+    elif style == "lemans":
+        count, label, illustration = 4, "4 ROTORES  /  MOTOR R26B", None
+    else:
+        count, label, illustration = visual["quantidade"], visual["rotulo"], visual.get("ilustracao")
+    if illustration == "cosmo-sport":
         draw_cosmo(draw, t, accent)
         positions = [(217, 699), (485, 699)]
         radius = 96
+    elif count == 1:
+        positions = [(353, 612)]
+        radius = 224
+    elif count == 2:
+        positions = [(217, 612), (485, 612)]
+        radius = 100
+    elif count == 3:
+        positions = [(353, 490), (217, 710), (485, 710)]
+        radius = 92
     else:
         positions = [(212, 501), (489, 501), (212, 727), (489, 727)]
         radius = 92
@@ -164,14 +202,13 @@ def draw_mechanism(draw, style, t, accent, font):
         reveal = ease((t - index * .12) * 3.3)
         if reveal > 0:
             rotor(draw, x, y + int((1 - reveal) * 22), radius, angle + index * .36, accent)
-    label = "2 ROTORES  /  COSMO SPORT" if count == 2 else "4 ROTORES  /  MOTOR R26B"
     draw.text((351, 845), label, font=font(23, True), fill=accent, anchor="ma")
 
 
 def draw_frame(scene, seconds, fraction, active, font, label):
     visual = scene["visual"]
     style = visual["tipo"]
-    accent = MINT if style in {"origem", "cosmo"} else ORANGE
+    accent = MINT if style in {"origem", "cosmo", "linha-tempo"} or visual.get("ilustracao") else ORANGE
     image = backdrop().copy()
     draw = ImageDraw.Draw(image)
     draw.text((55, 81), label, font=font(22, True), fill=accent)
@@ -182,10 +219,10 @@ def draw_frame(scene, seconds, fraction, active, font, label):
     draw.multiline_text((52, 149 + offset), title, font=fitted_title(draw, title, font), fill=INK, spacing=-5)
     draw.text((56, 330), visual["chamada"], font=font(22, True), fill=accent)
 
-    if style == "origem":
-        draw_origin(draw, seconds, accent, font)
+    if style in {"origem", "linha-tempo"}:
+        draw_origin(draw, seconds, accent, font, MAZDA_TIMELINE if style == "origem" else visual["itens"])
     else:
-        draw_mechanism(draw, style, seconds, accent, font)
+        draw_mechanism(draw, visual, seconds, accent, font)
 
     if active:
         text, start = active

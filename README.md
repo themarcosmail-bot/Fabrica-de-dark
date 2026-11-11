@@ -40,11 +40,25 @@ O episódio sobre o motor rotativo da Mazda usa animação própria, ilustraçõ
 .\.venv\Scripts\python.exe main.py --roteiro exemplos/motores-iconicos-01.json
 ```
 
-O campo opcional `serie` define o texto no topo. As cenas documentais usam um objeto `visual` com `tipo`, `titulo` e `chamada`, além da lista `falas` com os trechos a narrar. O exemplo combina os visuais `impacto`, `origem`, `mecanica`, `cosmo` e `lemans`. Também é possível combinar cenas documentais e cartões tipográficos no mesmo roteiro.
+O campo opcional `serie` define o texto no topo. As cenas documentais usam um objeto `visual` com `tipo`, `titulo` e `chamada`, além da lista `falas` com os trechos a narrar. `linha-tempo` recebe `itens` com `marco`, `titulo` e `detalhe`. `contagem-rotores` recebe `quantidade` e `rotulo`, e pode usar a ilustração `cosmo-sport` para dois rotores. Use `impacto` e `mecanica` para mostrar o rotor do Wankel. É possível combinar cenas documentais e cartões tipográficos no mesmo roteiro.
+
+## Produzir e revisar um episódio
+
+As [skills do projeto](.agents/skills) orientam pesquisa, roteiro, direção visual, narração, renderização e revisão. Abra o repositório no Codex e peça, por exemplo, **“Use a Fábrica de Dark para produzir um Short de Motores Icônicos sobre o rotativo da Mazda.”** Também dá para executar o roteiro de exemplo no PowerShell:
+
+```powershell
+.\.venv\Scripts\python.exe main.py --roteiro exemplos/motores-iconicos-01.json --checar-roteiro
+.\.venv\Scripts\python.exe main.py --roteiro exemplos/motores-iconicos-01.json --episodio episodios/mazda --somente-voz
+.\.venv\Scripts\python.exe main.py --roteiro exemplos/motores-iconicos-01.json --episodio episodios/mazda
+```
+
+`episodios/mazda/narracao.json` lista os arquivos de áudio. `episodios/mazda/episodio.json` aponta para o MP4, as legendas e o roteiro da versão mais recente e mostra quantas falas e cenas foram reutilizadas. Cada render deixa uma versão em `versoes/` com estado `aguardando-revisao`.
+
+Para corrigir uma cena, edite uma cópia do roteiro e renderize com a mesma pasta de episódio. Para corrigir apenas a pronúncia, use `falas_voz` na cena. Por exemplo, `[null, "A ideia do rotativo era de Félix Vânkel."]` usa a grafia alternativa na segunda fala e mantém a legenda original. Um ajuste visual reaproveita os áudios e as demais cenas documentais. O MP4 completo é recomposto a cada revisão.
 
 ## Arquivos gerados
 
-Cada execução concluída cria uma pasta em `saida/` com:
+Sem `--episodio`, cada execução concluída cria uma pasta em `saida/` com:
 
 - `video_final.mp4` em 1080 × 1920, com áudio AAC.
 - `legendas.srt` com uma entrada por fala no modo documental ou por cena nos cartões.
