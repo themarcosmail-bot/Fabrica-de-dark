@@ -2,7 +2,7 @@ name: Produção e revisão de episódio no Windows
 
 on:
   pull_request:
-    branches: [main, feat/motion-documental]
+    branches: [main, feat/motion-documental, feat/skills-producao]
   push:
     branches: [main]
 
@@ -32,6 +32,8 @@ jobs:
           python -m piper.download_voices --data-dir models pt_BR-faber-medium
       - name: Renderizar e refazer apenas a cena ou fala alterada
         run: python tests/verificar_episodio.py
+      - name: Verificar revisão por versão e prévia do vídeo
+        run: python -m unittest discover -s tests -p test_painel_revisao.py
 
   descobrir-skills:
     runs-on: ubuntu-24.04
