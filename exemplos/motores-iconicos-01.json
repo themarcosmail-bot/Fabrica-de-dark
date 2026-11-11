@@ -1,0 +1,69 @@
+{
+  "titulo": "Por que a Mazda apostou num motor que gira?",
+  "serie": "MOTORES ICÔNICOS  /  EP. 01",
+  "cenas": [
+    {
+      "visual": {
+        "tipo": "impacto",
+        "titulo": "ROTATIVO\nDA MAZDA",
+        "chamada": "O MOTOR QUE DESAFIOU OS PISTÕES"
+      },
+      "falas": [
+        "E se um rotor tomasse o lugar dos pistões?",
+        "O maior problema estava em três pontas."
+      ]
+    },
+    {
+      "visual": {
+        "tipo": "origem",
+        "titulo": "IDEIA ALEMÃ.\nAPOSTA JAPONESA.",
+        "chamada": "1961  /  A ORIGEM"
+      },
+      "falas": [
+        "Em 1961, a Mazda fez um acordo técnico com a alemã NSU.",
+        "A ideia do rotativo era de Felix Wankel."
+      ]
+    },
+    {
+      "visual": {
+        "tipo": "mecanica",
+        "titulo": "TRÊS PONTAS.\nTRÊS CÂMARAS.",
+        "chamada": "O DESAFIO DA VEDAÇÃO"
+      },
+      "falas": [
+        "O rotor triangular separa três câmaras.",
+        "As pontas precisam vedar enquanto ele gira.",
+        "Nos testes, a vibração deixava marcas na carcaça."
+      ]
+    },
+    {
+      "visual": {
+        "tipo": "cosmo",
+        "titulo": "COSMO\nSPORT",
+        "chamada": "1967  /  DA BANCADA PARA A RUA"
+      },
+      "falas": [
+        "A Mazda resolveu o problema com vedações de carbono e alumínio.",
+        "Em 1967, o Cosmo Sport chegou às ruas com dois rotores."
+      ]
+    },
+    {
+      "visual": {
+        "tipo": "lemans",
+        "titulo": "VITÓRIA\nEM LE MANS",
+        "chamada": "1991  /  MAZDA 787B"
+      },
+      "falas": [
+        "Em 1991, o Mazda 787B venceu as 24 Horas de Le Mans.",
+        "O motor tinha quatro rotores.",
+        "Tudo começou com o desafio daquelas três pontas."
+      ]
+    }
+  ],
+  "fontes": [
+    "https://newsroom.mazda.com/en/publicity/release/2023/202310/231030b.html",
+    "https://www.mazda.com/en/about/history/greatcar/cosmo-sport/",
+    "https://www.mazda.com/en/experience/mspr/motorsports/lemans/r26b/",
+    "https://www.lemans.org/en/aco/history"
+  ]
+}

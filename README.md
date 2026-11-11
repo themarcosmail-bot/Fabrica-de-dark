@@ -32,12 +32,22 @@ ollama pull qwen2.5:3b
 
 O Ollama escreve o roteiro a partir do tema. Confira as afirmações antes de publicar. Para usar um roteiro pesquisado no ChatGPT ou no Codex, siga o JSON de exemplo e use `--roteiro`. O campo opcional `fontes` fica preservado no arquivo exportado.
 
+## Piloto de Motores Icônicos
+
+O episódio sobre o motor rotativo da Mazda usa animação própria, ilustrações esquemáticas e legendas embutidas por fala. Usa as mesmas dependências do primeiro Short.
+
+```powershell
+.\.venv\Scripts\python.exe main.py --roteiro exemplos/motores-iconicos-01.json
+```
+
+O campo opcional `serie` define o texto no topo. As cenas documentais usam um objeto `visual` com `tipo`, `titulo` e `chamada`, além da lista `falas` com os trechos a narrar. O exemplo combina os visuais `impacto`, `origem`, `mecanica`, `cosmo` e `lemans`. Também é possível combinar cenas documentais e cartões tipográficos no mesmo roteiro.
+
 ## Arquivos gerados
 
 Cada execução concluída cria uma pasta em `saida/` com:
 
 - `video_final.mp4` em 1080 × 1920, com áudio AAC.
-- `legendas.srt` com uma entrada por cena, sincronizada com a duração da narração.
+- `legendas.srt` com uma entrada por fala no modo documental ou por cena nos cartões.
 - `roteiro.json` com os textos usados e as fontes fornecidas.
 
 O painel de revisão, a fila de produção e a integração com o YouTube ficam para versões futuras.
