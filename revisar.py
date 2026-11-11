@@ -121,7 +121,7 @@ def source_links(sources):
         links.append(
             f'<li><a href="{escape(source)}" target="_blank" rel="noopener noreferrer">'
             f'<span>{escape(url.hostname)}</span><small>{escape(url.path or "/")}</small>'
-            '<span class="external" aria-hidden="true">↗</span></a></li>'
+            '<span class="external" aria-hidden="true">↗&#65038;</span></a></li>'
         )
     return "".join(links) or '<li class="empty">Nenhuma fonte informada neste roteiro.</li>'
 
@@ -134,11 +134,12 @@ def page(server, versions, selected, *, error="", notes=None, saved=False):
     latest = server.episode.default_version(versions)
     options = []
     for number, version in enumerate(reversed(versions), start=1):
-        label = f"Versão {number:02d} · {version.rsplit('-', 1)[-1]}"
+        label = f"Versão {number:02d}"
         if version == latest:
             label += " · mais recente"
         marked = " selected" if version == selected else ""
-        options.append(f'<option value="{escape(version)}"{marked}>{escape(label)}</option>')
+        identifier = escape(version)
+        options.append(f'<option value="{identifier}"{marked} title="{identifier}">{escape(label)}</option>')
 
     template = Template((UI / "painel.html").read_text(encoding="utf-8"))
     return template.substitute(
