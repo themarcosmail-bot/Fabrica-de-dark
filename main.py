@@ -3,6 +3,7 @@ import json
 import math
 import os
 import re
+import shutil
 import struct
 import subprocess
 import sys
@@ -11,14 +12,17 @@ import textwrap
 import unicodedata
 import wave
 from functools import lru_cache
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
+import PIL
 from PIL import Image, ImageDraw, ImageFont
 
-from motion import STYLES, render_clip
+from episode import MediaCache, file_digest, write_json
+from motion import STYLES, render_clip, validate_visual
 
 ROOT = Path(__file__).resolve().parent
 WIDTH, HEIGHT = 1080, 1920
@@ -102,7 +106,15 @@ def validate_motion(scene, index):
     if any(not isinstance(phrase, str) or not phrase.strip() or len(phrase) > 74 for phrase in phrases):
         raise ValueError(f"Cada fala da cena {index} deve ter até 74 caracteres.")
     scene["falas"] = [" ".join(phrase.split()) for phrase in phrases]
+    if "falas_voz" in scene:
+        spoken = scene["falas_voz"]
+        if not isinstance(spoken, list) or len(spoken) != len(phrases) or any(
+            phrase is not None and (not isinstance(phrase, str) or not phrase.strip() or len(phrase) > 110)
+            for phrase in spoken
+        ):
+            raise ValueError(f"Use uma entrada em falas_voz para cada fala da cena {index}.")
     scene["texto"] = " ".join(scene["falas"])
+    validate_visual(visual, index)
 
 
 @lru_cache(maxsize=48)
@@ -204,14 +216,49 @@ def timestamp(milliseconds):
     return f"{hours:02}:{minutes:02}:{seconds:02},{millis:03}"
 
 
-def build_motion_audio(phrases, path, config):
+def spoken_phrases(scene):
+    if "visual" not in scene:
+        return [scene["texto"]]
+    overrides = scene.get("falas_voz", [None] * len(scene["falas"]))
+    return [" ".join(voice.split()) if voice else text for text, voice in zip(scene["falas"], overrides)]
+
+
+def voice_signature(config):
+    model = ROOT / config["piper_model"]
+    model_config = Path(f"{model}.json")
+    if executable := config.get("piper_exe"):
+        resolved = shutil.which(executable)
+        if not resolved:
+            raise ValueError(f"Executável do Piper ausente: {executable}.")
+        engine = file_digest(Path(resolved))
+    else:
+        try:
+            engine = version("piper-tts")
+        except PackageNotFoundError as error:
+            raise ValueError("Instale piper-tts no ambiente Python da Fábrica de Dark.") from error
+    return [engine, file_digest(model), file_digest(model_config)]
+
+
+def voice_track(text, path, config, cache=None, signature=None):
+    if cache is None:
+        speak(text, path, config)
+        return path
+
+    def generate(target):
+        speak(text, target, config)
+        audio_length(target)
+
+    return cache.asset("falas", [signature, text], "voz.wav", generate)
+
+
+def build_motion_audio(scene, path, config, cache=None, signature=None):
     cues = []
     elapsed = 0
     phrase_path = path.with_name("fala.wav")
     with wave.open(str(path), "wb") as output:
-        for index, text in enumerate(phrases):
-            speak(text, phrase_path, config)
-            with wave.open(str(phrase_path), "rb") as source:
+        for index, (text, spoken) in enumerate(zip(scene["falas"], spoken_phrases(scene))):
+            track = voice_track(spoken, phrase_path, config, cache, signature)
+            with wave.open(str(track), "rb") as source:
                 rate = source.getframerate()
                 if source.getnchannels() != 1 or source.getsampwidth() != 2:
                     raise ValueError("A voz do modo documental precisa gerar WAV PCM mono de 16 bits.")
@@ -237,19 +284,25 @@ def build_motion_audio(phrases, path, config):
     return cues
 
 
-def render_video(script, config, work, media):
+def render_video(script, config, work, media, cache=None, signature=None):
     command = [config["ffmpeg_exe"], "-hide_banner", "-loglevel", "error", "-nostdin", "-y"]
     filters, concat_inputs, subtitles = [], [], []
     elapsed_frames = 0
     total = len(script["cenas"])
+    if cache is not None and any("visual" in scene for scene in script["cenas"]):
+        renderer = [
+            file_digest(Path(__file__)), file_digest(ROOT / "motion.py"), PIL.__version__,
+            font(22).getname(), font(22, True).getname(),
+            subprocess.check_output([config["ffmpeg_exe"], "-version"]).splitlines()[0].decode(),
+        ]
     for index, scene in enumerate(script["cenas"], 1):
         text = scene["texto"]
         audio = media / f"voz_{index:02}.wav"
         motion = "visual" in scene
         if motion:
-            cues = build_motion_audio(scene["falas"], audio, config)
+            cues = build_motion_audio(scene, audio, config, cache, signature)
         else:
-            speak(text, audio, config)
+            audio = voice_track(text, audio, config, cache, signature)
 
         seconds = audio_length(audio)
         frames = math.ceil(seconds * FPS) + PAUSE_FRAMES
@@ -259,7 +312,14 @@ def render_video(script, config, work, media):
         if motion:
             clip = media / f"movimento_{index:02}.mp4"
             label = script.get("serie", "FÁBRICA DE DARK")
-            render_clip(config["ffmpeg_exe"], clip, scene, cues, frames, FPS, font, label)
+
+            def create_clip(target):
+                render_clip(config["ffmpeg_exe"], target, scene, cues, frames, FPS, font, label)
+
+            if cache is None:
+                create_clip(clip)
+            else:
+                clip = cache.asset("cenas", [renderer, scene["visual"], cues, frames, label], "cena.mp4", create_clip)
             command.extend(["-i", str(clip)])
         else:
             card = media / f"cena_{index:02}.png"
@@ -294,24 +354,51 @@ def render_video(script, config, work, media):
     (work / "legendas.srt").write_text("\n".join(subtitles), encoding="utf-8")
 
 
+def prepare_voice(script, config, episode, cache, signature):
+    tracks = []
+    for scene in script["cenas"]:
+        paths = [voice_track(text, None, config, cache, signature) for text in spoken_phrases(scene)]
+        tracks.append([path.relative_to(episode).as_posix() for path in paths])
+    write_json(episode / "narracao.json", {"titulo": script["titulo"], "faixas_por_cena": tracks, **cache.stats})
+    print(f"Narração pronta: {episode / 'narracao.json'}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Produza um Short narrado no seu computador.")
     parser.add_argument("tema", nargs="?", help="Tema a enviar ao Ollama")
     parser.add_argument("--roteiro", type=Path, help="Roteiro JSON pronto")
     parser.add_argument("--config", type=Path, default=ROOT / "config.json")
+    parser.add_argument("--episodio", type=Path, help="Pasta do episódio, com cache e versões")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--checar-roteiro", action="store_true", help="Validar o JSON sem renderizar")
+    mode.add_argument("--somente-voz", action="store_true", help="Preparar as faixas do roteiro no cache")
     args = parser.parse_args()
     if bool(args.tema and args.tema.strip()) == bool(args.roteiro):
         parser.error("Informe um tema ou use --roteiro com um arquivo JSON.")
+    if (args.checar_roteiro or args.somente_voz) and args.roteiro is None:
+        parser.error("Este modo requer --roteiro.")
+    if args.somente_voz and args.episodio is None:
+        parser.error("Use --episodio para salvar a narração.")
 
     try:
+        if args.checar_roteiro:
+            validate_script(read_json(args.roteiro))
+            print("Roteiro válido.")
+            return
         config = read_json(args.config)
         script = read_json(args.roteiro) if args.roteiro else make_script(args.tema.strip(), config)
         validate_script(script)
+        episode = args.episodio.resolve() if args.episodio else None
+        cache = MediaCache(episode / ".cache") if episode else None
+        signature = voice_signature(config) if cache is not None else None
+        if args.somente_voz:
+            prepare_voice(script, config, episode, cache, signature)
+            return
 
         label = args.tema.strip() if args.tema else script["titulo"]
         ascii_label = unicodedata.normalize("NFKD", label).encode("ascii", "ignore").decode()
         slug = re.sub(r"[^a-z0-9]+", "-", ascii_label.lower()).strip("-")[:45].rstrip("-")
-        output = ROOT / "saida"
+        output = episode / "versoes" if episode else ROOT / "saida"
         output.mkdir(exist_ok=True)
         destination = output / f"{slug or 'video'}-{uuid4().hex[:12]}"
 
@@ -320,11 +407,31 @@ def main():
             media = Path(temp) / "media"
             work.mkdir()
             media.mkdir()
-            render_video(script, config, work, media)
+            render_video(script, config, work, media, cache, signature)
             (work / "roteiro.json").write_text(
                 json.dumps(script, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
             )
+            if episode:
+                manifest = {
+                    "schema": 1,
+                    "titulo": script["titulo"],
+                    "serie": script.get("serie"),
+                    "formato": "short-9x16",
+                    "fontes": script.get("fontes", []),
+                    "versao": destination.name,
+                    "estado": "aguardando-revisao",
+                    "arquivos": {
+                        kind: (destination / name).relative_to(episode).as_posix()
+                        for kind, name in (("video", "video_final.mp4"), ("legendas", "legendas.srt"),
+                                           ("roteiro", "roteiro.json"))
+                    },
+                    "processamento": cache.stats,
+                }
+                write_json(work / "episodio.json", manifest)
             work.rename(destination)
+            if episode:
+                write_json(episode / "episodio.json", manifest)
+                print(json.dumps(cache.stats, ensure_ascii=False))
     except (OSError, ValueError, KeyError, TypeError, wave.Error, subprocess.CalledProcessError) as error:
         parser.exit(1, f"Erro: {error}\n")
 
