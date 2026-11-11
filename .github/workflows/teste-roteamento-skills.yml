@@ -1,0 +1,114 @@
+name: Teste de seleção automática das skills
+
+on:
+  push:
+    branches: [test/roteamento-skills]
+
+permissions:
+  contents: read
+
+jobs:
+  corrigir-pronuncia:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 23
+    env:
+      OLLAMA_CONTEXT_LENGTH: '16384'
+      OLLAMA_NUM_PARALLEL: '1'
+      ROUTE_MODEL: qwen3.5:4b
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Instalar dependências e iniciar Ollama
+        run: |
+          npm install --global @openai/codex@0.167.1
+          python -m pip install -r requirements.txt
+          if ! command -v ffmpeg >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y ffmpeg
+          fi
+          mkdir -p "$RUNNER_TEMP/ollama"
+          curl -fsSL --retry 3 https://ollama.com/download/ollama-linux-amd64.tar.zst \
+            | tar --zstd -x -C "$RUNNER_TEMP/ollama"
+          printf '%s\n' "$RUNNER_TEMP/ollama/bin" >> "$GITHUB_PATH"
+          nohup "$RUNNER_TEMP/ollama/bin/ollama" serve > "$RUNNER_TEMP/ollama.log" 2>&1 &
+          for attempt in {1..20}; do
+            if curl -fsS http://127.0.0.1:11434/api/version; then exit 0; fi
+            sleep 1
+          done
+          tail -20 "$RUNNER_TEMP/ollama.log"
+          exit 1
+      - name: Preparar modelo e versão de referência
+        run: |
+          ollama pull "$ROUTE_MODEL"
+          cp config.example.json config.json
+          python -m piper.download_voices --data-dir models pt_BR-faber-medium
+          mkdir -p episodios/roteamento
+          cp exemplos/motores-iconicos-01.json episodios/roteamento/roteiro.json
+          python main.py --roteiro episodios/roteamento/roteiro.json --episodio episodios/roteamento --somente-voz
+          cp episodios/roteamento/narracao.json "$RUNNER_TEMP/voz-original.json"
+          python main.py --roteiro episodios/roteamento/roteiro.json --episodio episodios/roteamento
+          cp episodios/roteamento/episodio.json "$RUNNER_TEMP/versao-original.json"
+      - name: Pedir a correção em português e verificar o resultado
+        run: |
+          prompt='No episódio da Mazda, corrija apenas a pronúncia de Wankel, com V inicial. Mantenha o texto da legenda igual e gere uma nova versão local. O roteiro está em episodios/roteamento/roteiro.json e a pasta do episódio é episodios/roteamento. Use o Python e as dependências já instaladas. Ao terminar, diga qual skill usou e quantas falas foram refeitas. Execute a correção nesta pasta de episódio, sem alterar o código do projeto.'
+          export ROUTE_TRACE="$RUNNER_TEMP/codex.jsonl"
+          set +e
+          timeout 12m codex exec --oss --local-provider ollama -m "$ROUTE_MODEL" \
+            --ephemeral --json --sandbox workspace-write -c model_context_window=16384 \
+            "$prompt" < /dev/null > "$ROUTE_TRACE" 2> "$RUNNER_TEMP/codex.stderr"
+          route_exit=$?
+          set -e
+          if [ "$route_exit" -ne 0 ]; then
+            tail -40 "$RUNNER_TEMP/codex.stderr"
+            tail -20 "$ROUTE_TRACE"
+            exit "$route_exit"
+          fi
+          python - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+
+          root = Path("episodios/roteamento")
+          temp = Path(os.environ["RUNNER_TEMP"])
+          def load(path):
+              return json.loads(path.read_text(encoding="utf-8"))
+          events = [json.loads(line) for line in Path(os.environ["ROUTE_TRACE"]).read_text().splitlines() if line.strip()]
+          commands = [
+              event["item"]["command"] for event in events
+              if event.get("type") == "item.completed" and event.get("item", {}).get("type") == "command_execution"
+              and event["item"].get("exit_code") == 0
+          ]
+          print("Comandos executados:", commands)
+          for event in events:
+              if event.get("type") == "item.completed" and event.get("item", {}).get("type") == "agent_message":
+                  print(event["item"].get("text", ""))
+          assert any("fabrica-narrar/SKILL.md" in command for command in commands), "O registro não comprova a leitura da skill fabrica-narrar."
+          old, new = load(temp / "versao-original.json"), load(root / "episodio.json")
+          assert old["versao"] != new["versao"], "O Codex não gerou uma nova versão."
+          assert new["estado"] == "aguardando-revisao"
+          old_script, new_script = [load(root / version["arquivos"]["roteiro"]) for version in (old, new)]
+          override = new_script["cenas"][1].pop("falas_voz")
+          assert override[0] is None and isinstance(override[1], str) and "Felix V" in override[1]
+          assert old_script == new_script, "O roteiro visível mudou."
+          def subtitles(version):
+              return [line for line in (root / version["arquivos"]["legendas"]).read_text(encoding="utf-8").splitlines()
+                      if line and " --> " not in line and not line.isdigit()]
+          assert subtitles(old) == subtitles(new)
+          stats = new["processamento"]
+          if stats["falas_geradas"] == 0:
+              voice = load(root / "narracao.json")
+              old_voice = load(temp / "voz-original.json")
+              changed = [(i, j) for i, (a, b) in enumerate(zip(old_voice["faixas_por_cena"], voice["faixas_por_cena"]))
+                         for j, (x, y) in enumerate(zip(a, b)) if x != y]
+              assert changed == [(1, 1)]
+              assert (voice["falas_geradas"], voice["falas_reutilizadas"]) == (1, 11)
+          else:
+              assert (stats["falas_geradas"], stats["falas_reutilizadas"]) == (1, 11)
+          video = root / new["arquivos"]["video"]
+          subprocess.run(["ffmpeg", "-v", "error", "-xerror", "-i", str(video), "-f", "null", "-"], check=True)
+          assert subprocess.check_output(["git", "status", "--porcelain", "--untracked-files=no"]).strip() == b""
+          print("PASSOU: o Codex escolheu fabrica-narrar, corrigiu uma fala e manteve as legendas.")
+          PY
