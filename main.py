@@ -3,18 +3,22 @@ import json
 import math
 import os
 import re
+import struct
 import subprocess
 import sys
 import tempfile
 import textwrap
 import unicodedata
 import wave
+from functools import lru_cache
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
 from PIL import Image, ImageDraw, ImageFont
+
+from motion import STYLES, render_clip
 
 ROOT = Path(__file__).resolve().parent
 WIDTH, HEIGHT = 1080, 1920
@@ -66,10 +70,15 @@ def validate_script(script):
     title = script.get("titulo")
     if not isinstance(title, str) or not title.strip():
         raise ValueError("Preencha o campo titulo no roteiro.")
+    label = script.get("serie", "FÁBRICA DE DARK")
+    if not isinstance(label, str) or not label.strip() or len(label) > 40 or len(label.splitlines()) != 1:
+        raise ValueError("Use uma linha de até 40 caracteres no campo serie.")
     scenes = script.get("cenas")
     if not isinstance(scenes, list) or not 1 <= len(scenes) <= 12:
         raise ValueError("O roteiro precisa ter de 1 a 12 cenas.")
     for index, scene in enumerate(scenes, 1):
+        if isinstance(scene, dict) and "visual" in scene:
+            validate_motion(scene, index)
         text = scene.get("texto") if isinstance(scene, dict) else None
         if not isinstance(text, str) or not text.strip():
             raise ValueError(f"Preencha o campo texto da cena {index}.")
@@ -77,6 +86,26 @@ def validate_script(script):
     script["titulo"] = title.strip()
 
 
+def validate_motion(scene, index):
+    visual = scene["visual"]
+    if not isinstance(visual, dict) or not isinstance(visual.get("tipo"), str) or visual["tipo"] not in STYLES:
+        raise ValueError(f"Escolha um visual documental válido para a cena {index}.")
+    for key, limit in (("titulo", 55), ("chamada", 45)):
+        value = visual.get(key)
+        if not isinstance(value, str) or not value.strip() or len(value) > limit:
+            raise ValueError(f"Preencha visual.{key} com até {limit} caracteres na cena {index}.")
+    if len(visual["titulo"].splitlines()) > 2 or len(visual["chamada"].splitlines()) != 1:
+        raise ValueError(f"Use até duas linhas no título e uma na chamada da cena {index}.")
+    phrases = scene.get("falas")
+    if not isinstance(phrases, list) or not 1 <= len(phrases) <= 8:
+        raise ValueError(f"Informe de 1 a 8 falas curtas na cena {index}.")
+    if any(not isinstance(phrase, str) or not phrase.strip() or len(phrase) > 74 for phrase in phrases):
+        raise ValueError(f"Cada fala da cena {index} deve ter até 74 caracteres.")
+    scene["falas"] = [" ".join(phrase.split()) for phrase in phrases]
+    scene["texto"] = " ".join(scene["falas"])
+
+
+@lru_cache(maxsize=48)
 def font(size, bold=False):
     windows_fonts = Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts"
     windows_name = "arialbd.ttf" if bold else "arial.ttf"
@@ -175,36 +204,82 @@ def timestamp(milliseconds):
     return f"{hours:02}:{minutes:02}:{seconds:02},{millis:03}"
 
 
-def render_video(script, config, work):
+def build_motion_audio(phrases, path, config):
+    cues = []
+    elapsed = 0
+    phrase_path = path.with_name("fala.wav")
+    with wave.open(str(path), "wb") as output:
+        for index, text in enumerate(phrases):
+            speak(text, phrase_path, config)
+            with wave.open(str(phrase_path), "rb") as source:
+                rate = source.getframerate()
+                if source.getnchannels() != 1 or source.getsampwidth() != 2:
+                    raise ValueError("A voz do modo documental precisa gerar WAV PCM mono de 16 bits.")
+                if index == 0:
+                    output.setparams(source.getparams())
+                    lead = round(rate * .16)
+                    samples = []
+                    for frame in range(lead):
+                        t = frame / rate
+                        envelope = min(1, t * 130) * (1 - frame / lead) ** 3
+                        value = 7400 * envelope * math.sin(math.tau * (106 * t - 155 * t * t))
+                        samples.append(struct.pack("<h", round(value)))
+                    output.writeframes(b"".join(samples))
+                    elapsed = lead
+                elif rate != output.getframerate():
+                    raise ValueError("A taxa de amostragem da voz mudou durante a cena.")
+                count = source.getnframes()
+                if count == 0:
+                    raise ValueError("O Piper retornou uma fala vazia.")
+                output.writeframes(source.readframes(count))
+                cues.append((round(elapsed * 1000 / rate), round((elapsed + count) * 1000 / rate), text))
+                elapsed += count
+    return cues
+
+
+def render_video(script, config, work, media):
     command = [config["ffmpeg_exe"], "-hide_banner", "-loglevel", "error", "-nostdin", "-y"]
     filters, concat_inputs, subtitles = [], [], []
     elapsed_frames = 0
     total = len(script["cenas"])
     for index, scene in enumerate(script["cenas"], 1):
         text = scene["texto"]
-        card = work / f"cena_{index:02}.png"
-        audio = work / f"voz_{index:02}.wav"
-        render_card(text, script["titulo"], index, total, card)
-        speak(text, audio, config)
+        audio = media / f"voz_{index:02}.wav"
+        motion = "visual" in scene
+        if motion:
+            cues = build_motion_audio(scene["falas"], audio, config)
+        else:
+            speak(text, audio, config)
 
         seconds = audio_length(audio)
         frames = math.ceil(seconds * FPS) + PAUSE_FRAMES
         duration = f"{frames / FPS:.3f}"
         video_input = (index - 1) * 2
         audio_input = video_input + 1
-        command.extend(["-loop", "1", "-framerate", str(FPS), "-t", duration, "-i", str(card)])
+        if motion:
+            clip = media / f"movimento_{index:02}.mp4"
+            label = script.get("serie", "FÁBRICA DE DARK")
+            render_clip(config["ffmpeg_exe"], clip, scene, cues, frames, FPS, font, label)
+            command.extend(["-i", str(clip)])
+        else:
+            card = media / f"cena_{index:02}.png"
+            render_card(text, script["titulo"], index, total, card)
+            command.extend(["-loop", "1", "-framerate", str(FPS), "-t", duration, "-i", str(card)])
+            cues = [(0, round(seconds * 1000), text)]
         command.extend(["-i", str(audio)])
-        filters.append(f"[{video_input}:v]setsar=1,format=yuv420p[v{index}]")
+        filters.append(f"[{video_input}:v]scale={WIDTH}:{HEIGHT},setsar=1,format=yuv420p[v{index}]")
         filters.append(
             f"[{audio_input}:a]aresample={AUDIO_RATE},"
             f"aformat=channel_layouts=mono,apad,atrim=duration={duration}[a{index}]"
         )
         concat_inputs.append(f"[v{index}][a{index}]")
 
-        start = elapsed_frames * 1000 // FPS
-        end = start + round(seconds * 1000)
-        caption = textwrap.fill(text, width=42, break_long_words=False, break_on_hyphens=False)
-        subtitles.append(f"{index}\n{timestamp(start)} --> {timestamp(end)}\n{caption}\n")
+        offset = elapsed_frames * 1000 // FPS
+        for start, end, phrase in cues:
+            caption = textwrap.fill(phrase, width=42, break_long_words=False, break_on_hyphens=False)
+            subtitles.append(
+                f"{len(subtitles) + 1}\n{timestamp(offset + start)} --> {timestamp(offset + end)}\n{caption}\n"
+            )
         elapsed_frames += frames
 
     filters.append(f"{''.join(concat_inputs)}concat=n={total}:v=1:a=1[video][voice]")
@@ -242,13 +317,13 @@ def main():
 
         with tempfile.TemporaryDirectory(prefix=".render-", dir=output) as temp:
             work = Path(temp) / "video"
+            media = Path(temp) / "media"
             work.mkdir()
-            render_video(script, config, work)
+            media.mkdir()
+            render_video(script, config, work, media)
             (work / "roteiro.json").write_text(
                 json.dumps(script, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
             )
-            for asset in [*work.glob("cena_*.png"), *work.glob("voz_*.wav")]:
-                asset.unlink()
             work.rename(destination)
     except (OSError, ValueError, KeyError, TypeError, wave.Error, subprocess.CalledProcessError) as error:
         parser.exit(1, f"Erro: {error}\n")
