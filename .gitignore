@@ -1,0 +1,13 @@
+/.venv/
+/config.json
+/models/
+/saida/
+/editorial/
+.env
+.env.*
+!.env.example
+credentials*.json
+client_secret*.json
+token*.json
+__pycache__/
+*.py[cod]
