@@ -12,9 +12,9 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 23
     env:
-      OLLAMA_CONTEXT_LENGTH: '32768'
+      OLLAMA_CONTEXT_LENGTH: '16384'
       OLLAMA_NUM_PARALLEL: '1'
-      ROUTE_MODEL: qwen3.5:4b
+      ROUTE_MODEL: qwen2.5:7b
     steps:
       - uses: actions/checkout@v7
         with:
@@ -54,18 +54,27 @@ jobs:
           cp episodios/roteamento/episodio.json "$RUNNER_TEMP/versao-original.json"
       - name: Pedir a correção em português e verificar o resultado
         run: |
-          prompt='No episódio da Mazda, corrija apenas a pronúncia de Wankel, com V inicial. Mantenha o texto da legenda igual e gere uma nova versão local. O roteiro está em episodios/roteamento/roteiro.json e a pasta do episódio é episodios/roteamento. Use o Python e as dependências já instaladas. Ao terminar, diga qual skill usou e quantas falas foram refeitas. Execute a correção nesta pasta de episódio, sem alterar o código do projeto.'
+          prompt='No episódio da Mazda, corrija apenas a pronúncia de Wankel, para Vânkel. Mantenha o texto da legenda igual e gere uma nova versão local. O roteiro está em episodios/roteamento/roteiro.json e a pasta do episódio é episodios/roteamento. Use o Python e as dependências já instaladas. Ao terminar, diga qual skill usou e quantas falas foram refeitas. Execute a correção nesta pasta de episódio, sem alterar o código do projeto.'
           export ROUTE_TRACE="$RUNNER_TEMP/codex.jsonl"
           set +e
           timeout 12m codex exec -m "$ROUTE_MODEL" \
-            --ephemeral --json --sandbox workspace-write -c model_context_window=32768 \
+            --ephemeral --json --sandbox workspace-write -c model_context_window=16384 \
             -c 'model_provider="ollama-teste"' \
             -c 'model_providers.ollama-teste.name="Ollama local"' \
             -c 'model_providers.ollama-teste.base_url="http://127.0.0.1:11434/v1/"' \
             -c 'model_providers.ollama-teste.wire_api="responses"' \
             -c 'web_search="disabled"' \
-            "$prompt" < /dev/null > "$ROUTE_TRACE" 2> "$RUNNER_TEMP/codex.stderr"
-          route_exit=$?
+            "$prompt" < /dev/null 2> "$RUNNER_TEMP/codex.stderr" | tee "$ROUTE_TRACE" | python -u -c '
+          import json, sys
+          for line in sys.stdin:
+              event = json.loads(line)
+              item = event.get("item", {})
+              if event.get("type") == "item.started" and item.get("type") == "command_execution":
+                  print("Codex:", item.get("command", ""))
+              elif event.get("type") in {"error", "turn.failed", "turn.completed"}:
+                  print(event)
+          '
+          route_exit=${PIPESTATUS[0]}
           set -e
           if [ "$route_exit" -ne 0 ]; then
             tail -40 "$RUNNER_TEMP/codex.stderr"
