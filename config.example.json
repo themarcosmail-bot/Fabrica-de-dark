@@ -1,0 +1,6 @@
+{
+  "ollama_url": "http://127.0.0.1:11434/api/generate",
+  "model": "qwen2.5:3b",
+  "piper_model": "models/pt_BR-faber-medium.onnx",
+  "ffmpeg_exe": "ffmpeg"
+}

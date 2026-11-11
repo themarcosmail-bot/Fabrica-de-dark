@@ -1,0 +1,13 @@
+{
+  "titulo": "Como este vídeo ganhou voz",
+  "cenas": [
+    {"texto": "Como um arquivo de texto vira um vídeo narrado? Tudo começa com um roteiro dividido em cenas."},
+    {"texto": "O Piper lê cada trecho e salva a narração em um arquivo de áudio."},
+    {"texto": "O FFmpeg junta os cartões e a voz. O tempo da fala define a duração de cada cena."},
+    {"texto": "O resultado é este vídeo vertical. As legendas também ficam salvas em um arquivo separado."}
+  ],
+  "fontes": [
+    "https://github.com/OHF-Voice/piper1-gpl/blob/main/docs/CLI.md",
+    "https://ffmpeg.org/ffmpeg.html"
+  ]
+}
